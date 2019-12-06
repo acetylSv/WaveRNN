@@ -29,6 +29,6 @@ def DaAi(path: Union[str, Path]):
             for line in f :
                 # some preprocessing here?
                 line = line.strip().replace(' ', '')
-                text_dict[txt_file.name] = line
+                text_dict[txt_file.name.replace('.txt', '')] = line
 
     return text_dict

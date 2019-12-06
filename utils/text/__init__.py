@@ -8,8 +8,8 @@ from utils.text.symbols import symbols
 _symbol_to_id = {s: i for i, s in enumerate(symbols)}
 _id_to_symbol = {i: s for i, s in enumerate(symbols)}
 
-# Regular expression matching text enclosed in curly braces:
-_curly_re = re.compile(r'(.*?)\{(.+?)\}(.*)')
+## Regular expression matching text enclosed in curly braces:
+#_curly_re = re.compile(r'(.*?)\{(.+?)\}(.*)')
 
 
 def text_to_sequence(text, cleaner_names):
@@ -27,16 +27,21 @@ def text_to_sequence(text, cleaner_names):
   '''
   sequence = []
 
-  # Check for curly braces and treat their contents as ARPAbet:
-  while len(text):
-    m = _curly_re.match(text)
-    if not m:
-      sequence += _symbols_to_sequence(_clean_text(text, cleaner_names))
-      break
-    sequence += _symbols_to_sequence(_clean_text(m.group(1), cleaner_names))
-    sequence += _arpabet_to_sequence(m.group(2))
-    text = m.group(3)
-
+#  # Check for curly braces and treat their contents as ARPAbet:
+#  while len(text):
+#    m = _curly_re.match(text)
+#    if not m:
+#      sequence += _symbols_to_sequence(_clean_text(text, cleaner_names))
+#      break
+#    sequence += _symbols_to_sequence(_clean_text(m.group(1), cleaner_names))
+#    sequence += _arpabet_to_sequence(m.group(2))
+#    text = m.group(3)
+  for char in text:
+    if char in _symbol_to_id:
+      sequence.append(_symbol_to_id[char])
+    else:
+      # ? for unknown word
+      sequence.append(_symbol_to_id['?'])
   return sequence
 
 
