@@ -6,7 +6,7 @@ from utils.paths import Paths
 from models.tacotron import Tacotron
 import argparse
 from utils.text import text_to_sequence
-from utils.display import save_attention, simple_table
+from utils.display import save_attention, simple_table, save_spectrogram
 from utils.dsp import reconstruct_waveform, save_wav
 import numpy as np
 
@@ -24,7 +24,8 @@ if __name__ == "__main__":
     parser.set_defaults(weights_path=None)
 
     # name of subcommand goes to args.vocoder
-    subparsers = parser.add_subparsers(required=True, dest='vocoder')
+    subparsers = parser.add_subparsers(dest='vocoder')
+    subparsers.required = True
 
     wr_parser = subparsers.add_parser('wavernn', aliases=['wr'])
     wr_parser.add_argument('--batched', '-b', dest='batched', action='store_true', help='Fast Batched Generation')
@@ -156,7 +157,9 @@ if __name__ == "__main__":
         else:
             save_path = paths.tts_output/f'{i}_{v_type}_{tts_k}k.wav'
 
-        if save_attn: save_attention(attention, save_path)
+        if save_attn:
+            save_attention(attention, paths.tts_output/f'attn{i}_{tts_k}k.png')
+            save_spectrogram(m, paths.tts_output/f'mel{i}_{tts_k}k')
 
         if args.vocoder == 'wavernn':
             m = torch.tensor(m).unsqueeze(0)

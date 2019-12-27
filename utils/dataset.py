@@ -111,15 +111,21 @@ def get_tts_datasets(path: Path, batch_size, r):
             dataset_ids += [item_id]
             mel_lengths += [len]
 
+    test_ids = dataset_ids[-hp.tts_test_samples:]
+    train_ids = dataset_ids[:-hp.tts_test_samples]
+    
     with open(path/'text_dict.pkl', 'rb') as f:
         text_dict = pickle.load(f)
 
-    train_dataset = TTSDataset(path, dataset_ids, text_dict)
+    train_dataset = TTSDataset(path, train_ids, text_dict)
+    test_dataset = TTSDataset(path, test_ids, text_dict)
 
     sampler = None
 
     if hp.tts_bin_lengths:
-        sampler = BinnedLengthSampler(mel_lengths, batch_size, batch_size * 3)
+        sampler = BinnedLengthSampler(
+                mel_lengths[:-hp.tts_test_samples], batch_size, batch_size * 3
+        )
 
     train_set = DataLoader(train_dataset,
                            collate_fn=lambda batch: collate_tts(batch, r),
@@ -128,14 +134,22 @@ def get_tts_datasets(path: Path, batch_size, r):
                            num_workers=1,
                            pin_memory=True)
 
-    longest = mel_lengths.index(max(mel_lengths))
+    test_set = DataLoader(test_dataset,
+                           collate_fn=lambda batch: collate_tts(batch, r),
+                           batch_size=1,
+#batch_size=batch_size,
+                           num_workers=1,
+                           pin_memory=True)
 
+    #longest = mel_lengths.index(max(mel_lengths))
     # Used to evaluate attention during training process
-    attn_example = dataset_ids[longest]
+    #attn_example = dataset_ids[longest]
 
     # print(attn_example)
 
-    return train_set, attn_example
+    #return train_set, attn_example
+    return train_set, test_set
+
 
 
 class TTSDataset(Dataset):

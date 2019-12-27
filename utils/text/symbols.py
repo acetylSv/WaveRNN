@@ -44,7 +44,8 @@ with open(path, 'rb') as f:
 filter_out = ['〈', '〉','《', '》', '「', '」', '(', ')', ':','（', '）', '.', '、', 'ㄧ', '‧']
 from operator import itemgetter
 for k, v in sorted(zh_TW_char_dict.items(), key=itemgetter(1)):
-    if v >= 5 and k not in filter_out:
+#    if v >= 5 and k not in filter_out:
+    if v >= 1 and k not in filter_out:
         zh_TW_char += k
 
 symbols = zh_TW_char

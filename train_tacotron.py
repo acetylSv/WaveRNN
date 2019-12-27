@@ -69,7 +69,6 @@ def main():
             current_step = model.get_step()
 
             r, lr, max_step, batch_size = session
-
             training_steps = max_step - current_step
 
             # Do we need to change to the next session?
@@ -94,8 +93,9 @@ def main():
                             ('Learning Rate', lr),
                             ('Outputs/Step (r)', model.r)])
 
-            train_set, attn_example = get_tts_datasets(paths.data, batch_size, r)
-            tts_train_loop(paths, model, optimizer, train_set, lr, training_steps, attn_example)
+            #train_set, attn_example = get_tts_datasets(paths.data, batch_size, r)
+            train_set, test_set = get_tts_datasets(paths.data, batch_size, r)
+            tts_train_loop(paths, model, optimizer, train_set, test_set, lr, training_steps)
 
         print('Training Complete.')
         print('To continue training increase tts_total_steps in hparams.py or use --force_train\n')
@@ -103,13 +103,14 @@ def main():
 
     print('Creating Ground Truth Aligned Dataset...\n')
 
-    train_set, attn_example = get_tts_datasets(paths.data, 8, model.r)
+    #train_set, attn_example = get_tts_datasets(paths.data, 8, model.r)
+    train_set, test_set = get_tts_datasets(paths.data, 8, model.r)
     create_gta_features(model, train_set, paths.gta)
 
     print('\n\nYou can now train WaveRNN on GTA features - use python train_wavernn.py --gta\n')
 
 
-def tts_train_loop(paths: Paths, model: Tacotron, optimizer, train_set, lr, train_steps, attn_example):
+def tts_train_loop(paths: Paths, model: Tacotron, optimizer, train_set, test_set, lr, train_steps):
     device = next(model.parameters()).device  # use same device as model parameters
 
     for g in optimizer.param_groups: g['lr'] = lr
@@ -154,16 +155,27 @@ def tts_train_loop(paths: Paths, model: Tacotron, optimizer, train_set, lr, trai
 
             step = model.get_step()
             k = step // 1000
+            
+            if step % (hp.tts_checkpoint_every//2) == 0:
+                ckpt_name = f'taco_step{k}K'
+                save_attention(np_now(attention[0][:, :160]), paths.tts_attention/f'{step}')
+                save_spectrogram(np_now(m2_hat[0]), paths.tts_mel_plot/f'{step}', 600)
 
             if step % hp.tts_checkpoint_every == 0:
                 ckpt_name = f'taco_step{k}K'
                 save_checkpoint('tts', paths, model, optimizer,
                                 name=ckpt_name, is_silent=True)
-
+                m, attention = tts_eval(test_set, model, device)
+                print(attention.shape, m.shape)
+                save_attention(attention[:, :160], paths.tts_attention/f'{step}')
+                save_spectrogram(m, paths.tts_mel_plot/f'{step}', 600)
+                
+            '''
             if attn_example in ids:
                 idx = ids.index(attn_example)
                 save_attention(np_now(attention[idx][:, :160]), paths.tts_attention/f'{step}')
                 save_spectrogram(np_now(m2_hat[idx]), paths.tts_mel_plot/f'{step}', 600)
+            '''
 
             msg = f'| Epoch: {e}/{epochs} ({i}/{total_iters}) | Loss: {avg_loss:#.4} | {speed:#.2} steps/s | Step: {k}k | '
             stream(msg)
@@ -174,6 +186,15 @@ def tts_train_loop(paths: Paths, model: Tacotron, optimizer, train_set, lr, trai
         model.log(paths.tts_log, msg)
         print(' ')
 
+def tts_eval(test_set, model, device):
+    for _, (x, m, ids, _) in enumerate(test_set, 1):
+        x, m, ids = x[0], m[0], ids[0]
+        x, m = x.to(device), m.to(device)
+        _, m, attention = model.generate(x)
+        m = (m + 4) / 8
+        np.clip(m, 0, 1, out=m)
+        break
+    return m, attention
 
 def create_gta_features(model: Tacotron, train_set, save_path: Path):
     device = next(model.parameters()).device  # use same device as model parameters

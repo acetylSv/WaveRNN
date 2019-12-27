@@ -204,7 +204,158 @@ class LSA(nn.Module):
 
         return scores.unsqueeze(-1).transpose(1, 2)
 
+class Energy(nn.Module):
+    def __init__(self, enc_dim, dec_dim, att_dim, init_r=-4):
+        """
+        [Modified Bahdahnau attention] from
+        "Online and Linear-Time Attention by Enforcing Monotonic Alignment" (ICML 2017)
+        http://arxiv.org/abs/1704.00784
+        Used for Monotonic Attention and Chunk Attention
+        """
+        super().__init__()
+        self.tanh = nn.Tanh()
+        self.W = nn.Linear(enc_dim, att_dim, bias=False)
+        self.V = nn.Linear(dec_dim, att_dim, bias=False)
+        self.b = nn.Parameter(torch.Tensor(att_dim).normal_())
 
+        self.v = nn.utils.weight_norm(nn.Linear(dec_dim, 1))
+        self.v.weight_g.data = torch.Tensor([1 / att_dim]).sqrt()
+
+        self.r = nn.Parameter(torch.Tensor([init_r]))
+
+    def forward(self, encoder_outputs, decoder_h):
+        """
+        Args:
+            encoder_outputs: [batch_size, sequence_length, enc_dim]
+            decoder_h: [batch_size, dec_dim]
+        Return:
+            Energy [batch_size, sequence_length]
+        """
+        batch_size, sequence_length, enc_dim = encoder_outputs.size()
+        encoder_outputs = encoder_outputs.view(-1, enc_dim)
+        energy = self.tanh(self.W(encoder_outputs) +
+                           self.V(decoder_h).repeat(sequence_length, 1) +
+                           self.b)
+        energy = self.v(energy).squeeze(-1) + self.r
+
+        return energy.view(batch_size, sequence_length)
+
+
+class MonotonicAttention(nn.Module):
+    def __init__(self, enc_dim, dec_dim, att_dim, init_r):
+        """
+        [Monotonic Attention] from
+        "Online and Linear-Time Attention by Enforcing Monotonic Alignment" (ICML 2017)
+        http://arxiv.org/abs/1704.00784
+        """
+        super().__init__()
+
+        self.monotonic_energy = Energy(enc_dim, dec_dim, att_dim, init_r)
+        self.sigmoid = nn.Sigmoid()
+
+    def gaussian_noise(self, *size):
+        """Additive gaussian nosie to encourage discreteness"""
+        if torch.cuda.is_available():
+            return torch.cuda.FloatTensor(*size).normal_()
+        else:
+            return torch.Tensor(*size).normal_()
+
+    def safe_cumprod(self, x):
+        """Numerically stable cumulative product by cumulative sum in log-space"""
+        return torch.exp(torch.cumsum(torch.log(torch.clamp(x, min=1e-10, max=1)), dim=1))
+
+    def exclusive_cumprod(self, x):
+        """Exclusive cumulative product [a, b, c] => [1, a, a * b]
+        * TensorFlow: https://www.tensorflow.org/api_docs/python/tf/cumprod
+        * PyTorch: https://discuss.pytorch.org/t/cumprod-exclusive-true-equivalences/2614
+        """
+        batch_size, sequence_length = x.size()
+        if torch.cuda.is_available():
+            one_x = torch.cat([torch.ones(batch_size, 1).cuda(), x], dim=1)[:, :-1]
+        else:
+            one_x = torch.cat([torch.ones(batch_size, 1), x], dim=1)[:, :-1]
+        return torch.cumprod(one_x, dim=1)
+
+    def soft(self, encoder_outputs, decoder_h, previous_alpha=None):
+        """
+        Soft monotonic attention (Train)
+        Args:
+            encoder_outputs [batch_size, sequence_length, enc_dim]
+            decoder_h [batch_size, dec_dim]
+            previous_alpha [batch_size, sequence_length]
+        Return:
+            alpha [batch_size, sequence_length]
+        """
+        batch_size, sequence_length, enc_dim = encoder_outputs.size()
+
+        monotonic_energy = self.monotonic_energy(encoder_outputs, decoder_h)
+        p_select = self.sigmoid(monotonic_energy + self.gaussian_noise(monotonic_energy.size()))
+        cumprod_1_minus_p = self.safe_cumprod(1 - p_select)
+
+        if previous_alpha is None:
+            # First iteration => alpha = [1, 0, 0 ... 0]
+            alpha = torch.zeros(batch_size, sequence_length)
+            alpha[:, 0] = torch.ones(batch_size)
+            if torch.cuda.is_available:
+                alpha = alpha.cuda()
+
+        else:
+            alpha = p_select * cumprod_1_minus_p * \
+                torch.cumsum(previous_alpha / cumprod_1_minus_p, dim=1)
+
+        return alpha
+
+    def hard(self, encoder_outputs, decoder_h, previous_attention=None):
+        """
+        Hard monotonic attention (Test)
+        Args:
+            encoder_outputs [batch_size, sequence_length, enc_dim]
+            decoder_h [batch_size, dec_dim]
+            previous_attention [batch_size, sequence_length]
+        Return:
+            alpha [batch_size, sequence_length]
+        """
+        batch_size, sequence_length, enc_dim = encoder_outputs.size()
+
+        if previous_attention is None:
+            # First iteration => alpha = [1, 0, 0 ... 0]
+            attention = torch.zeros(batch_size, sequence_length)
+            attention[:, 0] = torch.ones(batch_size)
+            if torch.cuda.is_available:
+                attention = attention.cuda()
+        else:
+            # TODO: Linear Time Decoding
+            # It's not clear if authors' TF implementation decodes in linear time.
+            # https://github.com/craffel/mad/blob/master/example_decoder.py#L235
+            # They calculate energies for whole encoder outputs
+            # instead of scanning from previous attended encoder output.
+            monotonic_energy = self.monotonic_energy(encoder_outputs, decoder_h)
+
+            # Hard Sigmoid
+            # Attend when monotonic energy is above threshold (Sigmoid > 0.5)
+            above_threshold = (monotonic_energy > 0).float()
+
+            p_select = above_threshold * torch.cumsum(previous_attention, dim=1)
+            attention = p_select * self.exclusive_cumprod(1 - p_select)
+
+            # Not attended => attend at last encoder output
+            # Assume that encoder outputs are not padded
+            attended = attention.sum(dim=1)
+            for batch_i in range(batch_size):
+                if not attended[batch_i]:
+                    attention[batch_i, -1] = 1
+
+            # Ex)
+            # p_select                        = [0, 0, 0, 1, 1, 0, 1, 1]
+            # 1 - p_select                    = [1, 1, 1, 0, 0, 1, 0, 0]
+            # exclusive_cumprod(1 - p_select) = [1, 1, 1, 1, 0, 0, 0, 0]
+            # attention: product of above     = [0, 0, 0, 1, 0, 0, 0, 0]
+        return attention
+    
+    def forward(self, encoder_outputs, decoder_h, previous_attention=None):
+        f = self.soft if self.training else self.hard
+        return f(encoder_outputs, decoder_h, previous_attention)
+            
 class Decoder(nn.Module):
     # Class variable because its value doesn't change between classes
     # yet ought to be scoped by class because its a property of a Decoder
@@ -214,7 +365,11 @@ class Decoder(nn.Module):
         self.register_buffer('r', torch.tensor(1, dtype=torch.int))
         self.n_mels = n_mels
         self.prenet = PreNet(n_mels)
-        self.attn_net = LSA(decoder_dims)
+        #self.attn_net = LSA(decoder_dims)
+        # input to attn_net (enc_seq_proj)'s dim == decoder_dims
+        self.attn_net = MonotonicAttention(
+            enc_dim=decoder_dims, dec_dim=decoder_dims, att_dim=256, init_r=-4
+        )
         self.attn_rnn = nn.GRUCell(decoder_dims + decoder_dims // 2, decoder_dims)
         self.rnn_input = nn.Linear(2 * decoder_dims, lstm_dims)
         self.res_rnn1 = nn.LSTMCell(lstm_dims, lstm_dims)
@@ -227,7 +382,7 @@ class Decoder(nn.Module):
         return prev * mask + current * (1 - mask)
 
     def forward(self, encoder_seq, encoder_seq_proj, prenet_in,
-                hidden_states, cell_states, context_vec, t):
+                hidden_states, cell_states, context_vec, t, scores):
 
         # Need this for reshaping mels
         batch_size = encoder_seq.size(0)
@@ -244,10 +399,15 @@ class Decoder(nn.Module):
         attn_hidden = self.attn_rnn(attn_rnn_in.squeeze(1), attn_hidden)
 
         # Compute the attention scores
-        scores = self.attn_net(encoder_seq_proj, attn_hidden, t)
+        #scores = self.attn_net(encoder_seq_proj, attn_hidden, t)
+        scores = self.attn_net(
+            encoder_seq_proj, 
+            attn_hidden, 
+            scores
+        )
 
         # Dot product to create the context vector
-        context_vec = scores @ encoder_seq
+        context_vec = scores.unsqueeze(1) @ encoder_seq
         context_vec = context_vec.squeeze(1)
 
         # Concat Attention RNN output w. Context Vector & project
@@ -289,6 +449,7 @@ class Tacotron(nn.Module):
         self.encoder = Encoder(embed_dims, num_chars, encoder_dims,
                                encoder_K, num_highways, dropout)
         self.encoder_proj = nn.Linear(decoder_dims, decoder_dims, bias=False)
+        #self.encoder_proj = nn.Linear(encoder_dims, decoder_dims, bias=False)
         self.decoder = Decoder(n_mels, decoder_dims, lstm_dims)
         self.postnet = CBHG(postnet_K, n_mels, postnet_dims, [256, 80], num_highways)
         self.post_proj = nn.Linear(postnet_dims * 2, fft_bins, bias=False)
@@ -345,13 +506,14 @@ class Tacotron(nn.Module):
         mel_outputs, attn_scores = [], []
 
         # Run the decoder loop
+        scores = None
         for t in range(0, steps, self.r):
             prenet_in = m[:, :, t - 1] if t > 0 else go_frame
             mel_frames, scores, hidden_states, cell_states, context_vec = \
                 self.decoder(encoder_seq, encoder_seq_proj, prenet_in,
-                             hidden_states, cell_states, context_vec, t)
+                             hidden_states, cell_states, context_vec, t, scores)
             mel_outputs.append(mel_frames)
-            attn_scores.append(scores)
+            attn_scores.append(scores.unsqueeze(1))
 
         # Concat the mel outputs into sequence
         mel_outputs = torch.cat(mel_outputs, dim=2)
@@ -362,8 +524,8 @@ class Tacotron(nn.Module):
         linear = linear.transpose(1, 2)
 
         # For easy visualisation
-        attn_scores = torch.cat(attn_scores, 1)
-        # attn_scores = attn_scores.cpu().data.numpy()
+        attn_scores = torch.cat(attn_scores, 1).transpose(1, 2)
+        #attn_scores = attn_scores.cpu().data.numpy()
 
         return mel_outputs, linear, attn_scores
 
@@ -400,13 +562,14 @@ class Tacotron(nn.Module):
         mel_outputs, attn_scores = [], []
 
         # Run the decoder loop
+        scores = None
         for t in range(0, steps, self.r):
             prenet_in = mel_outputs[-1][:, :, -1] if t > 0 else go_frame
             mel_frames, scores, hidden_states, cell_states, context_vec = \
             self.decoder(encoder_seq, encoder_seq_proj, prenet_in,
-                         hidden_states, cell_states, context_vec, t)
+                         hidden_states, cell_states, context_vec, t, scores)
             mel_outputs.append(mel_frames)
-            attn_scores.append(scores)
+            attn_scores.append(scores.unsqueeze(1))
             # Stop the loop if silent frames present
             if (mel_frames < self.stop_threshold).all() and t > 10: break
 
@@ -422,11 +585,10 @@ class Tacotron(nn.Module):
         mel_outputs = mel_outputs[0].cpu().data.numpy()
 
         # For easy visualisation
-        attn_scores = torch.cat(attn_scores, 1)
+        attn_scores = torch.cat(attn_scores, 1).transpose(1, 2)
         attn_scores = attn_scores.cpu().data.numpy()[0]
 
         self.train()
-
         return mel_outputs, linear, attn_scores
 
     def init_model(self):

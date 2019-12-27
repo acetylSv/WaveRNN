@@ -83,20 +83,26 @@ def time_since(started):
 
 def save_attention(attn, path):
     fig = plt.figure(figsize=(12, 6))
+#fig = plt.figure()
     plt.imshow(attn.T, interpolation='nearest', aspect='auto')
+#plt.imshow(attn.T)
     fig.savefig(path.parent/f'{path.stem}.png', bbox_inches='tight')
+#fig.savefig(path.parent/f'{path.stem}.png')
     plt.close(fig)
-
 
 def save_spectrogram(M, path, length=None):
     M = np.flip(M, axis=0)
     if length: M = M[:, :length]
     fig = plt.figure(figsize=(12, 6))
+#    fig = plt.figure()
     plt.imshow(M, interpolation='nearest', aspect='auto')
+#    plt.imshow(M)
     fig.savefig(f'{path}.png', bbox_inches='tight')
+#    fig.savefig(f'{path}.png')
     plt.close(fig)
 
 
+'''
 def plot(array):
     mpl.interactive(True)
     fig = plt.figure(figsize=(30, 5))
@@ -118,4 +124,4 @@ def plot_spec(M):
     plt.imshow(M, interpolation='nearest', aspect='auto')
     plt.show()
     mpl.interactive(False)
-
+'''

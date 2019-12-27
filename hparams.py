@@ -9,7 +9,9 @@ data_path = '/storage/ranmei/DaAi/data'
 # model ids are separate - that way you can use a new tts with an old wavernn and vice versa
 # NB: expect undefined behaviour if models were trained on different DSP settings
 voc_model_id = 'ljspeech_mol'
-tts_model_id = 'ljspeech_lsa_smooth_attention'
+#tts_model_id = 'ljspeech_lsa_smooth_attention'
+#tts_model_id = 'ljspeech_lsa_smooth_attention_no_filter'
+tts_model_id = 'ljspeech_mono_no_filter'
 
 # set this to True if you are only interested in WaveRNN
 ignore_tts = False
@@ -94,8 +96,9 @@ tts_schedule = [(7,  1e-3,  10_000,  32),   # progressive training schedule
 tts_max_mel_len = 1250              # if you have a couple of extremely long spectrograms you might want to use this
 tts_bin_lengths = True              # bins the spectrogram lengths before sampling in data loader - speeds up training
 tts_clip_grad_norm = 1.0            # clips the gradient norm to prevent explosion - set to None if not needed
-tts_checkpoint_every = 2_000        # checkpoints the model every X steps
+tts_checkpoint_every = 10_000        # checkpoints the model every X steps
 # TODO: tts_phoneme_prob = 0.0              # [0 <-> 1] probability for feeding model phonemes vrs graphemes
+tts_test_samples = 50               # How many unseen samples to put aside for testing
 
 
 # ------------------------------------------------------------------------------------------------------------------#
