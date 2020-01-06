@@ -3,19 +3,20 @@
 '''
 Defines the set of symbols used in text input to the model.
 
-The default is a set of ASCII characters that works well for English or text that has been run through Unidecode. For other data, you can modify _characters. See TRAINING_DATA.md for details. '''
-#from utils.text import cmudict
+The default is a set of ASCII characters that works well for English or text that has been run through Unidecode. For other data, you can modify _characters. See TRAINING_DATA.md for details. 
+'''
+from utils.text import cmudict
 
-#_pad = '_'
-#_punctuation = '!\'(),.:;? '
-#_special = '-'
-#_letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz'
+_pad = '_'
+_punctuation = '!\'(),.:;? '
+_special = '-'
+_letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz'
 
-## Prepend "@" to ARPAbet symbols to ensure uniqueness (some are the same as uppercase letters):
-#_arpabet = ['@' + s for s in cmudict.valid_symbols]
+# Prepend "@" to ARPAbet symbols to ensure uniqueness (some are the same as uppercase letters):
+_arpabet = ['@' + s for s in cmudict.valid_symbols]
 
-## Export all symbols:
-#symbols = [_pad] + list(_special) + list(_punctuation) + list(_letters) + _arpabet
+# Export all symbols:
+symbols = [_pad] + list(_special) + list(_punctuation) + list(_letters) + _arpabet
 
 
 # For DaAi
@@ -23,6 +24,7 @@ The default is a set of ASCII characters that works well for English or text tha
 #from utils.paths import Paths
 #paths = Paths(hp.data_path, hp.voc_model_id, hp.tts_model_id)
 
+'''
 import pickle
 
 _pad = '_'
@@ -49,3 +51,4 @@ for k, v in sorted(zh_TW_char_dict.items(), key=itemgetter(1)):
         zh_TW_char += k
 
 symbols = zh_TW_char
+'''

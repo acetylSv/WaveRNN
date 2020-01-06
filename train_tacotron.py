@@ -48,6 +48,7 @@ def main():
 
     # Instantiate Tacotron Model
     print('\nInitialising Tacotron Model...\n')
+    print(('Num. of char is %s' % len(symbols)))
     model = Tacotron(embed_dims=hp.tts_embed_dims,
                      num_chars=len(symbols),
                      encoder_dims=hp.tts_encoder_dims,
