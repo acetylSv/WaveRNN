@@ -69,8 +69,8 @@ else:
 
     if not hp.ignore_tts:
 
-        #text_dict = ljspeech(path)
-        text_dict = DaAi(hp.txt_path)
+        text_dict = ljspeech(hp.txt_path)
+        #text_dict = DaAi(hp.txt_path)
 
         with open(paths.data/'text_dict.pkl', 'wb') as f:
             pickle.dump(text_dict, f)

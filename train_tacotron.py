@@ -6,7 +6,8 @@ from utils.display import *
 from utils.dataset import get_tts_datasets
 from utils.text.symbols import symbols
 from utils.paths import Paths
-from models.tacotron import Tacotron
+#from models.tacotron import Tacotron
+from models.lsa_tacotron import Tacotron
 import argparse
 from utils import data_parallel_workaround
 import os
@@ -155,20 +156,18 @@ def tts_train_loop(paths: Paths, model: Tacotron, optimizer, train_set, test_set
 
             step = model.get_step()
             k = step // 1000
-            
-            if step % (hp.tts_checkpoint_every//2) == 0:
-                ckpt_name = f'taco_step{k}K'
-                save_attention(np_now(attention[0][:, :160]), paths.tts_attention/f'{step}')
-                save_spectrogram(np_now(m2_hat[0]), paths.tts_mel_plot/f'{step}', 600)
 
             if step % hp.tts_checkpoint_every == 0:
                 ckpt_name = f'taco_step{k}K'
                 save_checkpoint('tts', paths, model, optimizer,
                                 name=ckpt_name, is_silent=True)
+                # recording training part
+                save_attention(np_now(attention[0][:, :160]), paths.tts_attention/f'train_{step}')
+                save_spectrogram(np_now(m2_hat[0]), paths.tts_mel_plot/f'train_{step}', 600)
+                # recording testing part
                 m, attention = tts_eval(test_set, model, device)
-                print(attention.shape, m.shape)
-                save_attention(attention[:, :160], paths.tts_attention/f'{step}')
-                save_spectrogram(m, paths.tts_mel_plot/f'{step}', 600)
+                save_attention(attention[:, :160], paths.tts_attention/f'eval_{step}')
+                save_spectrogram(m, paths.tts_mel_plot/f'eval_{step}', 600)
                 
             '''
             if attn_example in ids:

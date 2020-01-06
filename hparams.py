@@ -2,16 +2,23 @@
 # CONFIG -----------------------------------------------------------------------------------------------------------#
 
 # Here are the input and output data paths (Note: you can override wav_path in preprocess.py)
+'''
 wav_path = '/storage/ranmei/dataset/DaAiSermon/wav_pad'
 txt_path = '/storage/ranmei/dataset/DaAiSermon/txt_pad'
 data_path = '/storage/ranmei/DaAi/data'
+'''
+wav_path = '/storage/ranmei/dataset/LJSpeech-1.1/wav_16k'
+txt_path = '/storage/ranmei/dataset/LJSpeech-1.1/metadata.csv'
+data_path = '/storage/ranmei/LJ/data'
 
 # model ids are separate - that way you can use a new tts with an old wavernn and vice versa
 # NB: expect undefined behaviour if models were trained on different DSP settings
 voc_model_id = 'ljspeech_mol'
 #tts_model_id = 'ljspeech_lsa_smooth_attention'
 #tts_model_id = 'ljspeech_lsa_smooth_attention_no_filter'
-tts_model_id = 'ljspeech_mono_no_filter'
+#tts_model_id = 'ljspeech_mono_no_filter'
+#tts_model_id = 'real_ljspeech_mono'
+tts_model_id = 'real_ljspeech_lsa'
 
 # set this to True if you are only interested in WaveRNN
 ignore_tts = False
@@ -88,15 +95,15 @@ tts_stop_threshold = -3.4           # Value below which audio generation ends.
 
 # Training
 
-tts_schedule = [(7,  1e-3,  10_000,  32),   # progressive training schedule
-                (5,  1e-4, 100_000,  32),   # (r, lr, step, batch_size)
-                (2,  1e-4, 180_000,  16),
-                (2,  1e-4, 350_000,  8)]
+tts_schedule = [(2,  1e-3,  10_000,  32),   # progressive training schedule
+                (2,  1e-4, 100_000,  32),   # (r, lr, step, batch_size)
+                (2,  1e-4, 180_000,  32),
+                (2,  1e-5, 1000_000,  32)]
 
 tts_max_mel_len = 1250              # if you have a couple of extremely long spectrograms you might want to use this
 tts_bin_lengths = True              # bins the spectrogram lengths before sampling in data loader - speeds up training
 tts_clip_grad_norm = 1.0            # clips the gradient norm to prevent explosion - set to None if not needed
-tts_checkpoint_every = 10_000        # checkpoints the model every X steps
+tts_checkpoint_every = 20_000        # checkpoints the model every X steps
 # TODO: tts_phoneme_prob = 0.0              # [0 <-> 1] probability for feeding model phonemes vrs graphemes
 tts_test_samples = 50               # How many unseen samples to put aside for testing
 
